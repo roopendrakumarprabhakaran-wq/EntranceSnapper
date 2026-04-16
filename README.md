@@ -21,7 +21,7 @@ This plugin is self-contained and requires no external Python dependencies.
 4. Select the downloaded `.zip` file and click **Install**.
 
 ## Usage
-* **Automated Plotting:** Designed for city-scale datasets (e.g., Trafford BUA). Select your Building Footprint and Road Network layers. Processes features in highly optimized batches of 5,000, ensuring 100% building coverage via a tiered search radius (12m to 150m).
+* **Automated Plotting:** Designed for city-scale datasets (e.g., Manchester City Dataset). Select your Building Footprint and Road Network layers. Processes features in highly optimized batches of 5,000, ensuring 100% building coverage via a tiered search radius (12m to 150m).
 * **Manual Rectifier:** A "human-in-the-loop" tool for complex architectural layouts. Select specific curved road segments and the tool automatically aligns the nearest building entrances to that exact local tangency.
 
 ## License
