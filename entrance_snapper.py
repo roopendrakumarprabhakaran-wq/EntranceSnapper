@@ -52,20 +52,61 @@ class EntranceSnapper:
         if self.first_start:
             self.first_start = False
             self.dlg = EntranceSnapperDialog()
-            # UI Connections for core functionality only
+            
+            # Core UI Connections
             self.dlg.btn_run_auto.clicked.connect(self.trigger_automated)
             self.dlg.btn_run_rect1.clicked.connect(self.trigger_rectifier)
             
-            # NOTE: Log management icons (Save/Copy/Clear) are currently unlinked 
-            # to avoid AttributeError until UI compilation is finalized
+            # Close and Save logic
+            if hasattr(self.dlg, 'btn_close'):
+                self.dlg.btn_close.clicked.connect(self.close_and_save)
+
+            # Optional Field Mapping Connections
+            if hasattr(self.dlg, 'field_cb_build_id'):
+                self.dlg.build_selector_auto.layerChanged.connect(self.dlg.field_cb_build_id.setLayer)
+                self.dlg.road_selector_auto.layerChanged.connect(self.dlg.field_cb_road_name.setLayer)
+                self.dlg.road_selector_auto.layerChanged.connect(self.dlg.field_cb_road_rank.setLayer)
+                
+                self.dlg.field_cb_build_id.setLayer(self.dlg.build_selector_auto.currentLayer())
+                self.dlg.field_cb_road_name.setLayer(self.dlg.road_selector_auto.currentLayer())
+                self.dlg.field_cb_road_rank.setLayer(self.dlg.road_selector_auto.currentLayer())
             
         self.dlg.show()
+
+    def close_and_save(self):
+        """Handles closing the UI and prompting the user to save QGIS layer edits."""
+        if hasattr(self.dlg, 'point_selector_rect'):
+            p_layer = self.dlg.point_selector_rect.currentLayer()
+            
+            if p_layer and p_layer.isEditable():
+                reply = QMessageBox.question(
+                    self.dlg, 
+                    "Save Changes?", 
+                    "You have modified entrance points. Do you want to save these changes to the layer?", 
+                    QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel
+                )
+                
+                if reply == QMessageBox.Save:
+                    p_layer.commitChanges() 
+                    self.dlg.hide()
+                    self.dlg.reject()
+                elif reply == QMessageBox.Discard:
+                    p_layer.rollBack() 
+                    self.dlg.hide()
+                    self.dlg.reject()
+                # If Cancel is clicked, it does nothing and stays open
+            else:
+                self.dlg.hide()
+                self.dlg.reject()
+        else:
+            self.dlg.hide()
+            self.dlg.reject()
 
     def get_angle(self, p1, p2):
         return math.degrees(math.atan2(p2.y() - p1.y(), p2.x() - p1.x())) % 180
 
     def trigger_automated(self):
-        """Tiered Snapping Strategy for 100% Coverage"""
+        """Tiered Snapping Strategy with Optional Attribute Mapping & Proximity Fallback"""
         b_layer = self.dlg.build_selector_auto.currentLayer()
         r_layer = self.dlg.road_selector_auto.currentLayer()
         min_area = self.dlg.area_input.value()
@@ -80,6 +121,14 @@ class EntranceSnapper:
         self.log_message("--- STARTING COMPREHENSIVE ANALYSIS ---")
         start_time = time.time()
         
+        # Determine mapping fields if UI elements exist, else default to empty strings
+        b_id_fld = self.dlg.field_cb_build_id.currentField() if hasattr(self.dlg, 'field_cb_build_id') else ""
+        r_name_fld = self.dlg.field_cb_road_name.currentField() if hasattr(self.dlg, 'field_cb_road_name') else ""
+        r_rank_fld = self.dlg.field_cb_road_rank.currentField() if hasattr(self.dlg, 'field_cb_road_rank') else ""
+
+        if not r_rank_fld:
+            self.log_message("No hierarchy field mapped. Defaulting to Pure Proximity snapping...")
+
         BATCH_SIZE = 10000  
         road_hierarchy = {"primary": 1, "secondary": 2, "tertiary": 3, "residential": 4, "unclassified": 5}
         is_metric = b_layer.crs().mapUnits() == 0 
@@ -88,13 +137,23 @@ class EntranceSnapper:
 
         out_layer = QgsVectorLayer("Point?crs=" + b_layer.crs().toWkt(), "Comprehensive_Entrances", "memory")
         out_dp = out_layer.dataProvider()
-        out_dp.addAttributes([QgsField("entrance_id", QVariant.Int), QgsField("building_id", QVariant.Int)])
+        
+        # Build dynamic fields based on user selection
+        fields_to_add = [QgsField("entrance_id", QVariant.Int)]
+        # Always output a building ID (either mapped or auto-generated)
+        fields_to_add.append(QgsField("bldg_ref", QVariant.String) if b_id_fld else QgsField("building_id", QVariant.Int))
+        
+        # Only add road attribute columns if the user explicitly mapped them
+        if r_name_fld: fields_to_add.append(QgsField("road_ref", QVariant.String))
+        if r_rank_fld: fields_to_add.append(QgsField("road_rank", QVariant.String))
+        
+        out_dp.addAttributes(fields_to_add)
         out_layer.updateFields()
 
         self.log_message("Building Spatial Indices...")
         all_buildings_index = QgsSpatialIndex(b_layer.getFeatures())
         road_index = QgsSpatialIndex(r_layer.getFeatures())
-        road_cache = {f.id(): (f.geometry(), str(f['highway']).lower()) for f in r_layer.getFeatures()}
+        road_cache = {f.id(): f for f in r_layer.getFeatures()}
 
         final_features = []
         processed = 0
@@ -107,6 +166,7 @@ class EntranceSnapper:
 
             found_point = None
             best_score = -1
+            best_road_feat = None
 
             for radius in tiers:
                 intersecting_roads = road_index.intersects(b_geom.boundingBox().buffered(radius))
@@ -124,25 +184,58 @@ class EntranceSnapper:
                         continue 
 
                     for r_id in intersecting_roads:
-                        r_geom, r_type = road_cache[r_id]
+                        r_feat = road_cache[r_id]
+                        r_geom = r_feat.geometry()
                         dist = seg_geom.distance(r_geom)
-                        r_rank = road_hierarchy.get(r_type, 10)
                         
-                        rank_weight = math.pow((7 - r_rank), 3.0 if b_geom.area() > 1000 else 1.0)
+                        # Apply hierarchy weight ONLY if a field was mapped
+                        if r_rank_fld:
+                            try:
+                                r_type = str(r_feat[r_rank_fld]).lower()
+                            except KeyError:
+                                r_type = "unclassified"
+                            r_rank = road_hierarchy.get(r_type, 10)
+                            rank_weight = math.pow((7 - r_rank), 3.0 if b_geom.area() > 1000 else 1.0)
+                        else:
+                            # Pure Proximity Fallback: Weight is neutralized to 1.0
+                            rank_weight = 1.0
+                            
+                        # Score is now either weighted or strictly dependent on distance
                         total_score = rank_weight * (1.0 / (dist + 0.1))
                         
                         if total_score > best_score:
                             best_score = total_score
                             found_point = midpoint
+                            best_road_feat = r_feat
+                            
                 if found_point: break 
 
-            if not found_point: # Final Fallback
+            if not found_point: 
                 polygons = b_geom.asMultiPolygon()[0] if b_geom.isMultipart() else b_geom.asPolygon()
                 found_point = polygons[0][0]
 
+            # Construct attributes dynamically based on what was mapped
             f = QgsFeature(out_layer.fields())
             f.setGeometry(QgsGeometry.fromPointXY(found_point))
-            f.setAttributes([entrance_counter, b_feat.id()])
+            
+            attrs = [entrance_counter]
+            
+            # Map Building ID or fallback to QGIS feature ID
+            if b_id_fld:
+                raw_val = b_feat[b_id_fld]
+                # If QGIS reads it as a float (e.g., 334.0), convert it to a clean integer string (334)
+                if isinstance(raw_val, float) and raw_val.is_integer():
+                    attrs.append(str(int(raw_val)))
+                else:
+                    attrs.append(str(raw_val))
+            else:
+                attrs.append(b_feat.id())
+            
+            # Append optional fields if they were added to the schema
+            if r_name_fld: attrs.append(str(best_road_feat[r_name_fld]) if best_road_feat else "None")
+            if r_rank_fld: attrs.append(str(best_road_feat[r_rank_fld]) if best_road_feat else "None")
+            
+            f.setAttributes(attrs)
             final_features.append(f)
             entrance_counter += 1
 
@@ -152,7 +245,12 @@ class EntranceSnapper:
                 self.log_message(f"Processed {processed} buildings...")
 
         out_dp.addFeatures(final_features)
+        
+        # --- ENSURES POINTS RENDER IMMEDIATELY ---
+        out_layer.updateExtents()
         QgsProject.instance().addMapLayer(out_layer)
+        self.iface.mapCanvas().refresh()
+        
         self.log_message(f"COMPLETE! Total Time: {round(time.time() - start_time, 2)}s")
 
     def trigger_rectifier(self):
@@ -175,7 +273,6 @@ class EntranceSnapper:
         target_road = sel_roads[0]
         b_center = sel_buildings[0].geometry().centroid().asPoint()
         
-        # Identify specific road segment
         analysis = target_road.geometry().closestSegmentWithContext(b_center)
         next_v_idx = analysis[2]
         line = target_road.geometry().asPolyline() if not target_road.geometry().isMultipart() else target_road.geometry().asMultiPolyline()[0]
