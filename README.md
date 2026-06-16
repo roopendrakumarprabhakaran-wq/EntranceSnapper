@@ -61,7 +61,6 @@ Road Layer: The target infrastructure used to calculate the "longest parallel fa
 **Output:**
 
 A new Point Layer will be added to your QGIS project containing the generated entrances, complete with the relational attributes entrance_id, bldg_ref (mapped Building ID), and, optionally, road_ref and road_rank.
-* **Manual Rectifier:** A "human-in-the-loop" tool for complex architectural layouts. Select specific curved road segments and the tool automatically aligns the nearest building entrances to that exact local tangency.
 
 **Known Limitations (Edge Cases Requiring Manual Rectification)**
 
@@ -74,6 +73,8 @@ Large Corner Chamfers: On junction plots, buildings often feature large angled c
 Multi-Frontage Ambiguity: For large commercial or residential blocks bordered by equally ranked roads (e.g., bordered by two 'residential' roads), the algorithm cannot deduce the "true" postal address. It will snap to the facade with the shortest geometric distance, which may occasionally be the rear of the property.
 
 Sweeping Curves & Crescents: On heavily curved roads (cul-de-sacs, crescents), straight-line polygon generalizations of building footprints may cause automated points to drift. The Manual Rectifier is required here to calculate the exact Local Tangency and force perpendicular alignment.
+
+Polygon geometry dependency: The tool relies on the geometry of the building footprint polygons, in some cases closely packed buildings can be drawn as one single polygon or a single building can be broken into different polygons, which depends on the dataset present, in such cases the user is advised to split/join their polygons to get a 1:1 points to building matches.
 
 ## License
 This project is licensed under the GNU General Public License v3.0 - see the `LICENSE` file for details.
