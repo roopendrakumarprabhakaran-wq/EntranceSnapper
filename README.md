@@ -2,8 +2,6 @@
 
 A professional-grade spatial analysis tool to identify and refine building entrances by snapping footprints to logical road infrastructure using architectural logic. 
 
-**Developed under the Manchester Metropolitan University (MMU) Research Accelerator Grant, Project ID 5121135 (PI: Kristen Zhao).**
-
 ## Overview
 Traditional urban accessibility models rely on building centroids, which skews pedestrian network calculations in dense urban environments. The Entrance Snapper solves this by procedurally generating true architectural entrance points from raw building footprints. 
 
@@ -22,10 +20,9 @@ While the tool is built around the OSM highway classification dictionary for glo
 ## Installation
 This plugin is self-contained and requires no external Python dependencies. 
 
-1. Download the latest `Entrance_Snapper.zip` release.
-2. Open QGIS 3.x.
-3. Go to **Plugins > Manage and Install Plugins > Install from ZIP**.
-4. Select the downloaded `.zip` file and click **Install**.
+1. Open QGIS 3.x.
+2. Go to **Plugins > Manage and Install Plugins > All > Entrance Snapper**.
+3. Select the option and proceed by clicking the **Install Plugin** button and its done, check for the dot icon appearing on the toolbar dashboard and you are all set!.
 
 ## Usage
 
@@ -40,7 +37,7 @@ General:
 The batch processing algorithm requires the following parameters to execute the "Full Coverage" logic:
 
 Building Layer: A polygon vector layer containing building footprints.
-Road Layer: A line vector layer representing the transport network, utilized for hierarchy weighting. **(OSM Road network layer prefered since the tool is designed on OSM's Road network Heirarchy logic since its extensively available globally)**
+Road Layer: A line vector layer representing the transport network, utilized for hierarchy weighting. **(OSM Road network layer preferred since the tool is designed on OSM's Road network Hierarchy logic since its extensively available globally)**
 Minimum Area [in Square Meters] (Optional): A numerical filter to exclude minor structures (sheds, outbuildings) from the snapping process.
 Attribute Mapping (Optional): Three dropdowns allow you to map existing Building IDs, Road Names, and Road Hierarchy classifications directly to the newly generated points.
 
@@ -104,3 +101,5 @@ Sweeping Curves & Crescents: On heavily curved roads (cul-de-sacs, crescents), s
 
 ## License
 This project is licensed under the GNU General Public License v3.0 - see the `LICENSE` file for details.
+
+**Developed under the Manchester Metropolitan University (MMU) Research Accelerator Grant, Project ID 5121135 (PI: Kristen Zhao).**
